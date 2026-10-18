@@ -170,12 +170,20 @@ RUN if [ -n "$ENGINES" ]; then HOME=/tmp/omb-build-home npm install -g $ENGINES 
 COPY --from=build --chown=maus:maus /src/dist-native/duckdb/linux-x64 ./duckdb
 COPY --from=build --chown=maus:maus /src/dist-server ./dist-server
 COPY --from=build --chown=maus:maus /src/dist ./dist
+# Caddy is the public edge on 8080 (Railway); the server stays on loopback.
+COPY --from=edge /caddy /usr/local/bin/caddy
+COPY deploy/railway/Caddyfile /app/deploy/railway/Caddyfile
+COPY deploy/railway/start.sh /app/deploy/railway/start.sh
+RUN chmod 755 /app/deploy/railway/start.sh
 ENV HOME=/data
 # /data is a volume: mount one (Railway Volume, or -v / compose volume). Railway rejects the VOLUME instruction.
-USER maus
+# Starts as root so start.sh can hand a root-owned volume to `maus`; it then
+# runs Caddy and the server as `maus`.
+USER root
+EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD curl -sf http://127.0.0.1:8799/api/health | grep -q openmausbot || exit 1
 # The launcher runs dist-server/index.js and starts it again when it asks to
 # (a copied workspace committing, server/restart.ts), so the container, and a
 # Caddy sharing its network, stays up through that restart.
-CMD ["node", "dist-server/server-launcher.js"]
+CMD ["/app/deploy/railway/start.sh"]
